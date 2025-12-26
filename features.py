@@ -2,7 +2,7 @@
 import pandas as pd
 import numpy as np
 
-from old.old_stock_data_module import read_close_prices
+# from old.old_stock_data_module import read_close_prices
 
 def make_weekly_windows(close_prices: pd.DataFrame, lookback=10, horizon=1, days_per_week=5):
     """
@@ -142,14 +142,13 @@ def _make_return_labels(future_prices: pd.DataFrame):
     return y_ret
 
 
-def make_feature_windows(
-    close_prices: pd.DataFrame, lookback=10, horizon=1, days_per_week=5):
+def make_feature_windows(close_prices: pd.DataFrame, lookback=10, horizon=1, days_per_week=5):
     """
-    Returns a list of dicts:
-      - t0, t1
-      - X : features (assets x features)
-      - y_dir : direction labels (assets,)
-      - y_ret : next-week returns (assets,)
+    Returns a list of dicts containing keys-values:
+    - t0, t1
+    - X : features (assets x features)
+    - y_dir : direction labels (assets,)
+    - y_ret : next-week returns (assets,)
     """
     price_windows = make_weekly_windows(
         close_prices,

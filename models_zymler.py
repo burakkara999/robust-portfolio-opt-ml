@@ -5,60 +5,9 @@ import math
 import gurobipy as gp
 from gurobipy import GRB, quicksum
 
-from stock_data_module import read_close_prices
+from stock_data_module import read_close_prices, read_close_prices_all_merged
+from features import make_weekly_windows
 
-
-def generate_test_windows():
-    ## Read close price df
-    # tickers, close_df = read_close_prices("dow30")
-    tickers, close_df = read_close_prices("bist100")
-    assets_subset = []
-    print(close_df.head()) 
-    print(close_df.shape)
-
-    assets = close_df.columns.tolist()
-
-    ##calculate log-returns
-    returns = np.log(close_df / close_df.shift(1)).dropna() ##drop first row
-    print(returns.shape)
-
-    DAYS_PER_WEEK = 5
-    train_weeks, test_weeks = 4, 1
-
-    train_len, test_len = train_weeks * DAYS_PER_WEEK, test_weeks  * DAYS_PER_WEEK ## 50 days, # 5 days
-
-    rolling_windows = []
-    T = len(returns)
-
-    for start in range(0, T - train_len - test_len + 1, test_len):
-        train_slice = returns.iloc[start : start + train_len]
-        test_slice  = returns.iloc[start + train_len : start + train_len + test_len]
-
-        ## Sample mean and cov (TRAIN ONLY) -- mu and sigma
-        mu_hat = train_slice.mean()          # (79,)
-        Sigma_hat = train_slice.cov()        # (79,79)
-
-        ## (Optional) realized test returns
-        realized_test_mean = test_slice.mean()
-
-        rolling_windows.append({
-            "train_start": train_slice.index[0],
-            "train_end":   train_slice.index[-1],
-            "test_start":  test_slice.index[0],
-            "test_end":    test_slice.index[-1],
-            "sample_size": train_len,
-            "mu_hat": mu_hat,
-            "Sigma_hat": Sigma_hat,
-            "realized_test_mean": realized_test_mean
-        })
-
-    return rolling_windows, assets
-
-    # print("rolling window 0")
-    # print(rolling_windows[0]["train_start"], rolling_windows[0]["train_end"])
-    # print(rolling_windows[0]["train_end"], rolling_windows[0]["test_end"])
-    # print(rolling_windows[0]["mu_hat"].shape, rolling_windows[0]["Sigma_hat"].shape)
-    # print()
 
 def solve_markowitz_7(assets, window, p=0.1):
     """Solves Zymler et al. (Eq. 11) robust mean-variance portfolio.   
@@ -78,9 +27,8 @@ def solve_markowitz_7(assets, window, p=0.1):
     # window = rolling_windows[0]
     # assets = returns.columns.to_list()
 
-    mu = window['mu_hat']
-    Sigma = window['Sigma_hat']
-    sample_size = window['sample_size']
+    mu = window['past_returns'].mean()
+    Sigma = window['past_returns'].cov()
 
     # align to assets order
     mu_vec = mu.loc[assets].values if hasattr(mu, "loc") else np.asarray(mu)
@@ -156,9 +104,13 @@ def solve_markowitz_11(assets, window, p=0.1, q=0.1):
     n = len(assets)
 
     # ----- data (align safely) -----
-    mu = window["mu_hat"]          # ideally pd.Series indexed by assets
-    Sigma = window["Sigma_hat"]    # ideally pd.DataFrame indexed/cols by assets
-    E = window["sample_size"]      # number of samples used to compute mu_hat
+    mu = window['past_returns'].mean()   # ideally pd.Series indexed by assets
+    Sigma = window['past_returns'].cov() # ideally pd.DataFrame indexed/cols by assets
+    E = window["past_returns"].shape[0]  # number of samples used to compute mu_hat
+    # mu = window["mu_hat"]          # ideally pd.Series indexed by assets
+    # Sigma = window["Sigma_hat"]    # ideally pd.DataFrame indexed/cols by assets
+    # E = window["sample_size"]      # number of samples used to compute mu_hat
+    
 
     ## align to assets order
     mu_vec = mu.loc[assets].values if hasattr(mu, "loc") else np.asarray(mu)
@@ -214,20 +166,21 @@ def solve_markowitz_11(assets, window, p=0.1, q=0.1):
     return w_opt, round(m.ObjVal, 4)
 
 
-test_windows, assets = generate_test_windows()
-sol7, val7 = solve_markowitz_7(assets, test_windows[0])
-sol11, val11 = solve_markowitz_11(assets, test_windows[0], q=0.2)
+## Test on data 
+tickers, close_df = read_close_prices_all_merged(['bist100', 'dow30', 'commodities', 'bonds', 'funds_mini'])
+print(close_df.shape)
+
+rolling_windows = make_weekly_windows(close_prices=close_df, lookback=5) ## lookback weeks!
+
+print(rolling_windows[0]['past_prices'].shape[0])
+
+test_window = rolling_windows[0]
+assets = list(close_df.columns)
+sol7, val7 = solve_markowitz_7(assets, test_window)
+sol11, val11 = solve_markowitz_11(assets, test_window, q=0.2)
 
 # print(val7 == val11)
 print(val7)
 print(val11)
-# ## Train-Test Split
-# T = len(returns)
-# train_size = int(0.8 * T)
-
-# returns_train = returns.iloc[:train_size]
-# returns_test  = returns.iloc[train_size:]
-
-# print(returns_train.shape, returns_test.shape)
 
 

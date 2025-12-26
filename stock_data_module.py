@@ -336,25 +336,27 @@ if __name__ == "__main__":
     # print(merged_prices.shape)
     pass
 
-print(list_data_names())
-download_close_prices_all('funds_mini')
 
-# download_close_prices_batched('bist100', batch_size=20)
-tickers1, close_df1 = read_close_prices('bist100')
-print(close_df1.shape)
+##TEST CODE###
+# print(list_data_names())
+# download_close_prices_all('funds_mini')
 
-tickers2, close_df2 = read_close_prices('dow30')
-print(close_df2.shape)
+# # download_close_prices_batched('bist100', batch_size=20)
+# tickers1, close_df1 = read_close_prices('bist100')
+# print(close_df1.shape)
 
-tickers3, close_df3 = read_close_prices('commodities')
-print(close_df3.shape)
+# tickers2, close_df2 = read_close_prices('dow30')
+# print(close_df2.shape)
 
-tickers4, close_df4 = read_close_prices('bonds')
-print(close_df4.shape)
+# tickers3, close_df3 = read_close_prices('commodities')
+# print(close_df3.shape)
 
-tickers5, close_df5 = read_close_prices('funds_mini')
-print(close_df5.shape)
+# tickers4, close_df4 = read_close_prices('bonds')
+# print(close_df4.shape)
 
-tickers, close_df = read_close_prices_all_merged(['bist100', 'dow30', 'commodities', 'bonds', 'funds_mini'])
-print(close_df.shape)
+# tickers5, close_df5 = read_close_prices('funds_mini')
+# print(close_df5.shape)
+
+# tickers, close_df = read_close_prices_all_merged(['bist100', 'dow30', 'commodities', 'bonds', 'funds_mini'])
+# print(close_df.shape)
 
