@@ -141,14 +141,20 @@ def _make_return_labels(future_prices: pd.DataFrame):
     y_ret = future_rets.sum(axis=0)  # next-week log return
     return y_ret
 
-
+   
 def make_feature_windows(close_prices: pd.DataFrame, lookback=10, horizon=1, days_per_week=5):
     """
-    Returns a list of dicts containing keys-values:
-    - t0, t1
-    - X : features (assets x features)
-    - y_dir : direction labels (assets,)
-    - y_ret : next-week returns (assets,)
+    Returns: list[dict], where each dict contains:
+    - t0, t1: timestamps for the window end and horizon end
+    - past_prices: (lookback*5 days) x N assets     (X candidate)
+    - future_prices: (horizon*5 days) x N assets
+    - past_returns: daily log-returns over past window  (X candidate)
+    - future_returns: daily log-returns over future window 
+    - y_dir : direction labels (assets,)    (y candidate)
+    - y_ret : next-week returns (assets,)   (y candidate)
+    
+    Plus:
+    - X_feat: features (assets x features)
     """
     price_windows = make_weekly_windows(
         close_prices,
@@ -160,27 +166,54 @@ def make_feature_windows(close_prices: pd.DataFrame, lookback=10, horizon=1, day
     feature_windows = []
 
     for w in price_windows:
+        # Build features from past window (you can also use w["past_returns"] if your feature builder prefers)
         X = _build_features(w["past_prices"], days_per_week)
 
+        # Use labels already computed in make_weekly_windows
+        y_dir = w["y_dir"]
+        y_ret = w["y_ret"]
+
+        # ---- Align assets across everything we carry forward ----
+        # past/future prices are DataFrames with columns=assets
+        common_assets = X.index
+        common_assets = common_assets.intersection(w["past_prices"].columns)
+        common_assets = common_assets.intersection(w["future_prices"].columns)
+        common_assets = common_assets.intersection(w["past_returns"].columns)
+        common_assets = common_assets.intersection(w["future_returns"].columns)
+
+        # y_* can be Series with index=assets (or 1-row df). Handle both safely:
+        if hasattr(y_dir, "index"):
+            common_assets = common_assets.intersection(y_dir.index)
+        if hasattr(y_ret, "index"):
+            common_assets = common_assets.intersection(y_ret.index)
+
+        common_assets = common_assets.sort_values()
+
+        # Slice everything consistently
+        out = dict(w)  # keep all original keys/values
+        out["X_feat"] = X.loc[common_assets]
+
+        out["past_prices"] = w["past_prices"][common_assets]
+        out["future_prices"] = w["future_prices"][common_assets]
+        out["past_returns"] = w["past_returns"][common_assets]
+        out["future_returns"] = w["future_returns"][common_assets]
+
         # labels
-        y_dir = _make_direction_labels(w["future_prices"])
-        y_ret = _make_return_labels(w["future_prices"])
+        out["y_dir"] = y_dir.loc[common_assets] if hasattr(y_dir, "loc") else y_dir
+        out["y_ret"] = y_ret.loc[common_assets] if hasattr(y_ret, "loc") else y_ret
 
-        # align assets (important!)
-        common_assets = X.index.intersection(y_dir.index)
-
-        feature_windows.append(
-            dict(
-                t0=w["t0"],
-                t1=w["t1"],
-                X=X.loc[common_assets],
-                y_dir=y_dir.loc[common_assets],
-                y_ret=y_ret.loc[common_assets],
-            )
-        )
+        feature_windows.append(out)
 
     return feature_windows
 
+
+
+from stock_data_module import read_close_prices_all_merged
+
+tickers, close_df = read_close_prices_all_merged(["dow30"])  ## 980days x N assets
+
+##191 weeks = 980/5 - lookback*5
+rolling_feature_windows = make_feature_windows(close_prices=close_df, lookback=5) ## 191weeks --> X: N assets x 9 features
 
 
 # tickers, close_df = read_close_prices("dow30")

@@ -7,15 +7,15 @@ from tensorflow import keras
 from tensorflow.keras import layers
 
 from stock_data_module import read_close_prices_all_merged, read_close_prices
-from features import make_weekly_windows, make_feature_windows
+from features import make_feature_windows
 
 
 
 ###
-def build_xy_from_feature_windows(rolling_feature_windows):
+def _build_xy_from_feature_windows(rolling_feature_windows):
     rows = []
     for t_idx, w in enumerate(rolling_feature_windows):
-        X = w["X"]      # DataFrame: assets x features
+        X = w["X_feat"]      # DataFrame: assets x features
         y = w["y_ret"]  # Series: assets
 
         y = y.reindex(X.index)  # align
@@ -41,7 +41,7 @@ def build_xy_from_feature_windows(rolling_feature_windows):
     return X_all, y_all, t_all, asset_all, feature_cols
 
 
-def time_split_and_scale(X, y, t, train_frac=0.6, val_frac=0.2):
+def _time_split_and_scale(X, y, t, train_frac=0.6, val_frac=0.2):
     T = int(t.max() + 1)          # number of windows
     train_end = int(T * train_frac)
     val_end   = int(T * (train_frac + val_frac))
@@ -64,7 +64,7 @@ def time_split_and_scale(X, y, t, train_frac=0.6, val_frac=0.2):
     return X_tr, y_tr, X_va, y_va, X_te, y_te, mean, std, train_end, val_end
 
 
-def make_mlp(input_dim):
+def _make_mlp(input_dim):
     model = keras.Sequential([
         layers.Input(shape=(input_dim,)),
         layers.Dense(128, activation="relu"),
@@ -82,12 +82,12 @@ def make_mlp(input_dim):
 
 def train_mlp(rolling_feature_windows, train_frac=0.6, val_frac=0.2,
                    batch_size=512, epochs=50):
-    X, y, t, asset, feature_cols = build_xy_from_feature_windows(rolling_feature_windows)
+    X, y, t, asset, feature_cols = _build_xy_from_feature_windows(rolling_feature_windows)
 
     X_tr, y_tr, X_va, y_va, X_te, y_te, mean, std, train_end, val_end = \
-        time_split_and_scale(X, y, t, train_frac=train_frac, val_frac=val_frac)
+        _time_split_and_scale(X, y, t, train_frac=train_frac, val_frac=val_frac)
 
-    model = make_mlp(X_tr.shape[1])
+    model = _make_mlp(X_tr.shape[1])
 
     callbacks = [
         keras.callbacks.EarlyStopping(monitor="val_loss", patience=8, restore_best_weights=True),
@@ -107,7 +107,7 @@ def train_mlp(rolling_feature_windows, train_frac=0.6, val_frac=0.2,
 
 
 def evaluate_mlp_on_test_windows(rolling_feature_windows, model, x_mean, x_std, test_start_t):
-    X, y, t, asset, feature_cols = build_xy_from_feature_windows(rolling_feature_windows)
+    X, y, t, asset, feature_cols = _build_xy_from_feature_windows(rolling_feature_windows)
     Xs = (X - x_mean) / x_std
     yhat = model.predict(Xs, verbose=0).reshape(-1)
 
@@ -137,29 +137,11 @@ def evaluate_mlp_on_test_windows(rolling_feature_windows, model, x_mean, x_std, 
     return results, df
 
 
-# tickers, close_df = read_close_prices_all_merged(['bist100', 'dow30', 'commodities', 'bonds', 'funds_mini'])
-
-# rolling_windows = make_weekly_windows(close_prices=close_df, lookback=10) ## lookback weeks!
-# rolling_feature_windows = make_feature_windows(close_prices=close_df, lookback=5)
 
 
-# model, x_mean, x_std, feature_cols, train_end, val_end = train_mlp(
-#     rolling_feature_windows, train_frac=0.6, val_frac=0.2
-# )
-
-# # test starts at val_end
-# results, test_df = evaluate_mlp_on_test_windows(
-#     rolling_feature_windows, model, x_mean, x_std, test_start_t=val_end
-# )
-
-# print()
-# print("Train windows:", train_end)
-# print("Val windows:", val_end - train_end)
-# print("Test windows:", len(rolling_feature_windows) - val_end)
-# print(results)
-
-
-markets = ['bist100', 'dow30', 'commodities', 'bonds', 'funds_mini']
+# markets = ['bist100', 'dow30', 'commodities', 'bonds', 'funds_mini']
+# markets = ['bist100']
+markets = ['dow30']
 
 results_by_market = {}
 models_by_market = {}
@@ -167,12 +149,16 @@ models_by_market = {}
 for market in markets:
     print(f"\n===== Training model for {market} =====")
 
-    tickers, close_df = read_close_prices_all_merged([market])
+    tickers, close_df = read_close_prices_all_merged([market])  ## 980days x N assets
+    
+    ##191 weeks = 980/5 - lookback*5
+    rolling_feature_windows = make_feature_windows(close_prices=close_df, lookback=5) ## 191weeks --> X: N assets x 9 features
 
-    rolling_feature_windows = make_feature_windows(
-        close_prices=close_df,
-        lookback=5
-    )
+    print(rolling_feature_windows[0].keys())
+    print(rolling_feature_windows[0]['X_feat'].shape)
+    
+    # X, y, t, asset, feature_cols = _build_xy_from_feature_windows(rolling_feature_windows) ## X: (191*N, 9), y: (191*N, )
+    # print(X.shape, y.shape)
 
     model, x_mean, x_std, feature_cols, train_end, val_end = train_mlp(
         rolling_feature_windows,

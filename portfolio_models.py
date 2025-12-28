@@ -9,7 +9,7 @@ from stock_data_module import read_close_prices, read_close_prices_all_merged
 from features import make_weekly_windows
 
 
-def solve_markowitz_7(assets, window, p=0.1):
+def solve_markowitz_zymler7(assets, window, p=0.1):
     """Solves Zymler et al. (Eq. 11) robust mean-variance portfolio.   
     
     p : float in [0,1)
@@ -72,7 +72,7 @@ def solve_markowitz_7(assets, window, p=0.1):
 
 
 
-def solve_markowitz_11(assets, window, p=0.1, q=0.1):
+def solve_markowitz_zymler11(assets, window, p=0.1, q=0.1):
     """Solves Zymler et al. (Eq. 11) robust mean-variance portfolio.   
     
     ----------Parameters----------
@@ -166,6 +166,71 @@ def solve_markowitz_11(assets, window, p=0.1, q=0.1):
     return w_opt, round(m.ObjVal, 4)
 
 
+def solve_markowitz_robust(assets, expected_returns, Sigma, Lambda, kappa, delta):
+    """ 
+    Parameters:
+        -expected returns: array with size=len(assets)
+        -Sigma: Covariances of returns - from past returns (NxN)
+        -Lambda: Covariance of prediction errors (residuals) of returns (NxN)
+        -kappa: Penalty parameter for return uncertainty
+        -delta: Penalty parameter for risk - sqrt(p/(1-p))
+    """
+    rhat = np.asarray(expected_returns, dtype=float).reshape(-1)
+    Sigma = np.asarray(Sigma, dtype=float)
+    Lambda = np.asarray(Lambda, dtype=float)
+
+    n = len(assets)
+    assert rhat.shape == (n,)
+    assert Sigma.shape == (n, n)
+    assert Lambda.shape == (n, n)
+
+    m = gp.Model("robust_markowitz_photo")
+
+    # -------------------------
+    # Variables
+    # -------------------------
+    w = m.addVars(n, lb=0.0, ub=1.0, name="w")  # 0 <= w_i <= 1
+    t_r = m.addVar(lb=0.0, name="t_r")          # >= 0
+    t_s = m.addVar(lb=0.0, name="t_s")          # >= 0  (this is your t_Σ)
+
+    # -------------------------
+    # Constraints
+    # -------------------------
+    # sum_i w_i = 1
+    m.addConstr(gp.quicksum(w[i] for i in range(n)) == 1.0, name="budget")
+
+    # w^T Lambda w <= t_r^2
+    m.addQConstr(
+        gp.quicksum(Lambda[i, j] * w[i] * w[j] for i in range(n) for j in range(n))
+        <= t_r * t_r,
+        name="mean_uncertainty"
+    )
+
+    # w^T Sigma w <= t_s^2
+    m.addQConstr(
+        gp.quicksum(Sigma[i, j] * w[i] * w[j] for i in range(n) for j in range(n))
+        <= t_s * t_s,
+        name="risk"
+    )
+
+    # -------------------------
+    # Objective: max rhat^T w - kappa t_r - delta t_s
+    # -------------------------
+    m.setObjective(
+        gp.quicksum(rhat[i] * w[i] for i in range(n)) - kappa * t_r - delta * t_s,
+        GRB.MAXIMIZE
+    )
+
+    m.optimize()
+
+    if m.Status != GRB.OPTIMAL:
+        raise RuntimeError(f"Optimization status: {m.Status}")
+
+    w_sol = np.array([w[i].X for i in range(n)], dtype=float)
+    obj_val = float(m.ObjVal)
+    return w_sol, obj_val, m
+
+
 ## Test on data 
 tickers, close_df = read_close_prices_all_merged(['bist100', 'dow30', 'commodities', 'bonds', 'funds_mini'])
 print(close_df.shape)
@@ -176,8 +241,8 @@ print(rolling_windows[0]['past_prices'].shape[0])
 
 test_window = rolling_windows[0]
 assets = list(close_df.columns)
-sol7, val7 = solve_markowitz_7(assets, test_window)
-sol11, val11 = solve_markowitz_11(assets, test_window, q=0.2)
+sol7, val7 = solve_markowitz_zymler7(assets, test_window)
+sol11, val11 = solve_markowitz_zymler11(assets, test_window, q=0.2)
 
 # print(val7 == val11)
 print(val7)
