@@ -5,7 +5,7 @@ import math
 import gurobipy as gp
 from gurobipy import GRB, quicksum
 
-from stock_data_module import read_close_prices, read_close_prices_all_merged
+from asset_data_module import read_close_prices, read_close_prices_all_merged
 from features import make_weekly_windows
 
 
@@ -227,25 +227,33 @@ def solve_markowitz_robust(assets, expected_returns, Sigma, Lambda, kappa, delta
         raise RuntimeError(f"Optimization status: {m.Status}")
 
     w_sol = np.array([w[i].X for i in range(n)], dtype=float)
+    # zero-out tiny weights
+    w_sol[np.abs(w_sol) < 1e-5] = 0.0
+
+    # (optional but recommended) renormalize if sum should be 1
+    s = w_sol.sum()
+    if s > 0:
+        w_sol = w_sol / s
     obj_val = float(m.ObjVal)
-    return w_sol, obj_val, m
+    
+    return w_sol, obj_val
 
 
-## Test on data 
-tickers, close_df = read_close_prices_all_merged(['bist100', 'dow30', 'commodities', 'bonds', 'funds_mini'])
-print(close_df.shape)
+# ## Test on data 
+# tickers, close_df = read_close_prices_all_merged(['bist100', 'dow30', 'commodities', 'bonds', 'funds_mini'])
+# print(close_df.shape)
 
-rolling_windows = make_weekly_windows(close_prices=close_df, lookback=5) ## lookback weeks!
+# rolling_windows = make_weekly_windows(close_prices=close_df, lookback=5) ## lookback weeks!
 
-print(rolling_windows[0]['past_prices'].shape[0])
+# print(rolling_windows[0]['past_prices'].shape[0])
 
-test_window = rolling_windows[0]
-assets = list(close_df.columns)
-sol7, val7 = solve_markowitz_zymler7(assets, test_window)
-sol11, val11 = solve_markowitz_zymler11(assets, test_window, q=0.2)
+# test_window = rolling_windows[0]
+# assets = list(close_df.columns)
+# sol7, val7 = solve_markowitz_zymler7(assets, test_window)
+# sol11, val11 = solve_markowitz_zymler11(assets, test_window, q=0.2)
 
-# print(val7 == val11)
-print(val7)
-print(val11)
+# # print(val7 == val11)
+# print(val7)
+# print(val11)
 
 

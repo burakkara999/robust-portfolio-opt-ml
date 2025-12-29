@@ -152,7 +152,7 @@ def make_feature_windows(close_prices: pd.DataFrame, lookback=10, horizon=1, day
     - future_returns: daily log-returns over future window 
     - y_dir : direction labels (assets,)    (y candidate)
     - y_ret : next-week returns (assets,)   (y candidate)
-    
+
     Plus:
     - X_feat: features (assets x features)
     """
@@ -208,7 +208,7 @@ def make_feature_windows(close_prices: pd.DataFrame, lookback=10, horizon=1, day
 
 
 
-from stock_data_module import read_close_prices_all_merged
+from asset_data_module import read_close_prices_all_merged
 
 tickers, close_df = read_close_prices_all_merged(["dow30"])  ## 980days x N assets
 
