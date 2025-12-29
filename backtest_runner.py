@@ -148,9 +148,12 @@ def run_walk_forward(
                 "t0": test_window["t0"],
                 "t1": test_window["t1"],
                 "asset": a,
-                "y_true": float(y_true.loc[a]),
-                "y_pred": float(y_pred.loc[a]),
-                "err": float(err.loc[a]),
+                "y_true x1000": int(1000*y_true.loc[a]),
+                "y_pred x1000": int(1000*y_pred.loc[a]),
+                "err x1000": int(1000*err.loc[a]),
+                # "y_true": float(y_true.loc[a]),
+                # "y_pred": float(y_pred.loc[a]),
+                # "err": float(err.loc[a]),
             })
 
         # add realized error vector to history (for future Λ)
@@ -197,8 +200,8 @@ def run_walk_forward(
         port_summary_rows.append({
             "t0": test_window["t0"],
             "t1": test_window["t1"],
-            "expected_portfolio_return": expected_portfolio_return,
-            "realized_portfolio_return": realized_portfolio_return,
+            "expected_portfolio_return x1000": int(expected_portfolio_return*1000),
+            "realized_portfolio_return x1000": int(realized_portfolio_return*1000),
             "objective": float(obj),
             "is_robust": int(is_robust),
             "n_assets": int(len(common_assets)),
@@ -211,8 +214,8 @@ def run_walk_forward(
                 "t1": test_window["t1"],
                 "asset": a,
                 "weight": float(w_opt[i]),
-                "expected_portfolio_return": expected_portfolio_return,
-                "realized_portfolio_return": realized_portfolio_return,
+                "expected_portfolio_return x1000": int(expected_portfolio_return*1000),
+                "realized_portfolio_return x1000": int(realized_portfolio_return*1000),
                 "objective": float(obj),
                 "is_robust": int(is_robust),
             })
@@ -226,6 +229,6 @@ def run_walk_forward(
     if out_ports_csv:
         ports_df.to_csv(out_ports_csv, index=False)
     if out_ports_summary_csv:
-        port_summary_df.to_csv("outputs/portfolio_summary.csv", index=False)
+        port_summary_df.to_csv(out_ports_summary_csv, index=False)
 
     return preds_df, ports_df
