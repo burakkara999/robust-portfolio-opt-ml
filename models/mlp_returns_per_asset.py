@@ -6,7 +6,7 @@ from tensorflow.keras import layers
 from dataset_builders import X_from_past_returns
 
 
-def fit_predict_per_asset(
+def fit_predict_mlp_per_asset(
     train_windows,
     test_window,
     lookback_days=25,

@@ -8,10 +8,13 @@ from features import make_feature_windows
 
 
 ## MODEL 1 - MLP
-from models.mlp_returns import fit_predict 
+from models.mlp_returns import fit_predict_mlp
 
 ## MODEL 2 - per-asset MLP
-from models.mlp_returns_per_asset import fit_predict_per_asset
+from models.mlp_returns_per_asset import fit_predict_mlp_per_asset
+
+## benchmark model -- rolling (sample) mean
+from models.rolling_mean import fit_predict_rolling_mean
 
 
 def _metrics(y_true: np.ndarray, y_pred: np.ndarray, eps: float = 1e-8) -> dict:
@@ -141,11 +144,12 @@ if __name__ == "__main__":
     # ---- Choose your markets + model here (like main.py) ----
     # markets_chosen = ["commodities", "bonds"]
     markets_chosen = ["commodities"]
-    out_name = "comm"
+    out_name = "rolling_mean_comm"
+    model = fit_predict_rolling_mean
 
     preds_df, week_df, asset_df, overall_df = evaluate_walk_forward(
         markets=markets_chosen,
-        model_fit_predict_fn=fit_predict,  # swap to mlp_per_asset_fit_predict if you want
+        model_fit_predict_fn=model,  # swap to mlp_per_asset_fit_predict if you want
         train_weeks=52,
         start_date="2022-01-01",
         end_date="2025-11-30",
