@@ -12,6 +12,7 @@ preds_df, ports_df = run_walk_forward(
     model_fit_predict_fn=mlp_returns_fit_predict,
     X_fn=lambda w: X_from_past_returns(w, lookback_days=25),
     y_fn=y_from_next_week_return,
+    lookback_weeks=5,
     train_weeks=52,
     error_weeks=20,
     start_date="2022-01-01",
