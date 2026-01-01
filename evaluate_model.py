@@ -13,6 +13,15 @@ from models.mlp_returns import fit_predict_mlp
 ## MODEL 2 - per-asset MLP
 from models.mlp_returns_per_asset import fit_predict_mlp_per_asset
 
+## MODEL 3 - MLP for features
+from models.mlp_features import fit_predict_mlp_Xfeat, fit_predict_mlp_Xfeat_with_asset_onehot
+
+## MODEL 4 - per-asset MLP for features
+from models.mlp_features_per_asset import fit_predict_mlp_per_asset_Xfeat
+
+## MODEL 5 - MLP for residuals (sample mean + predicted residual) X_feat
+from models.mlp_residuals import fit_predict_residual_mlp_Xfeat
+
 ## benchmark model -- rolling (sample) mean
 from models.rolling_mean import fit_predict_rolling_mean
 
@@ -143,9 +152,19 @@ def evaluate_walk_forward(
 if __name__ == "__main__":
     # ---- Choose your markets + model here (like main.py) ----
     # markets_chosen = ["commodities", "bonds"]
-    markets_chosen = ["commodities"]
-    out_name = "rolling_mean_comm"
-    model = fit_predict_rolling_mean
+    # markets_chosen = ["commodities"]
+    markets_chosen = ["dow30"]
+    # out_name = "rolling_mean_dow30"
+    # out_name = "mlp_feat_onehot_dow30"
+    out_name = "mlp_residuals_dow30"
+    # out_name = "mlp_per_asset_feat_comm"
+    # model = fit_predict_rolling_mean
+    # model = fit_predict_mlp_Xfeat_with_asset_onehot
+    model = fit_predict_residual_mlp_Xfeat
+    # model = fit_predict_mlp
+    # model = fit_predict_mlp_Xfeat
+    # model = fit_predict_mlp_per_asset_Xfeat
+
 
     preds_df, week_df, asset_df, overall_df = evaluate_walk_forward(
         markets=markets_chosen,
@@ -158,6 +177,7 @@ if __name__ == "__main__":
         out_asset_metrics_csv=f"outputs/model_eval/{out_name}_asset_metrics.csv",
     )
 
+    print(f"\nSetting: {out_name}")
     print("OVERALL:")
     print(overall_df.to_string(index=False))
     print("\nLAST 5 WEEKS (cross-sectional):")

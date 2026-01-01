@@ -51,7 +51,8 @@ def fit_predict_mlp_per_asset(
 
         X_tr = np.asarray(X_list, dtype=np.float32)  # (W, d)
         y_tr = np.asarray(y_list, dtype=np.float32)  # (W,)
-
+        X_tr.shape
+        print("DEBUG on mlp per asset")
         # Normalize per-asset (train only)
         mu = X_tr.mean(axis=0)
         sigma = X_tr.std(axis=0) + 1e-8
