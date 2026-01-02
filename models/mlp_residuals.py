@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 import tensorflow as tf
+tf.get_logger().setLevel("ERROR")
 from tensorflow import keras
 from tensorflow.keras import layers
 
@@ -12,11 +13,12 @@ def fit_predict_residual_mlp_Xfeat(
     batch_size=256,
     lr=2e-4,
     seed=42,
-    residual_scale=1.0,      # shrink residuals (0.25/0.5/1.0)
-    l2=1e-4,
+    # residual_scale=1.0,      # shrink residuals (0.25/0.5/1.0)
+    residual_scale=0.25,      # shrink residuals (0.25/0.5/1.0)
     dropout=0.1,
     add_mu_to_X=False,       # optional: append sample-mean as extra feature
     fillna_value=0.0,
+    verbose=0,
 ):
     """
     Predict next-week returns as:
@@ -74,9 +76,9 @@ def fit_predict_residual_mlp_Xfeat(
     model = keras.Sequential([
         layers.Input(shape=(X_train.shape[1],)),
         norm,
-        layers.Dense(64, activation="relu", kernel_regularizer=keras.regularizers.l2(l2)),
-        layers.Dropout(dropout),
-        layers.Dense(32, activation="relu", kernel_regularizer=keras.regularizers.l2(l2)),
+        layers.Dense(64, activation="relu"),
+        # layers.Dropout(dropout),
+        layers.Dense(32, activation="relu"),
         layers.Dense(1),
     ])
 
@@ -86,9 +88,9 @@ def fit_predict_residual_mlp_Xfeat(
         keras.callbacks.EarlyStopping(monitor="loss", patience=5, restore_best_weights=True)
     ]
 
-    model.fit(X_train, r_train, epochs=epochs, batch_size=batch_size, verbose=0, callbacks=cb)
+    model.fit(X_train, r_train, validation_split=0.1 , epochs=epochs, batch_size=batch_size, verbose=verbose, callbacks=cb)
 
-    r_pred = model.predict(X_test, batch_size=batch_size, verbose=0).reshape(-1).astype(float)
+    r_pred = model.predict(X_test, batch_size=batch_size, verbose=verbose).reshape(-1).astype(float)
 
     y_pred = mu.to_numpy(float) + residual_scale * r_pred
     return pd.Series(y_pred, index=assets).fillna(fillna_value)

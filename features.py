@@ -14,6 +14,7 @@ def make_weekly_windows(close_prices: pd.DataFrame, lookback=10, horizon=1, days
     - future_prices: (horizon*5 days) x N assets
     - past_returns: daily log-returns over past window  (X candidate)
     - future_returns: daily log-returns over future window 
+    - past_weekly_ret: weekly log-returns over past window (X candidate)
     - y_dir : direction labels (assets,)    (y candidate)
     - y_ret : next-week returns (assets,)   (y candidate)
     """
@@ -48,6 +49,9 @@ def make_weekly_windows(close_prices: pd.DataFrame, lookback=10, horizon=1, days
         past_returns = np.log(past_prices / past_prices.shift(1)).dropna()
         future_returns = np.log(future_prices / future_prices.shift(1)).dropna()
 
+        past_weekly_returns = past_returns.groupby(np.arange(len(past_returns)) // days_per_week).sum()
+        # past_weekly_ret shape: (lookback, assets)  # each row is one week log-return
+
         next_week_logret = future_returns.sum(axis=0)  # per asset
         y_dir = (next_week_logret > 0).astype(int)
         y_ret = next_week_logret  # regression target
@@ -60,6 +64,7 @@ def make_weekly_windows(close_prices: pd.DataFrame, lookback=10, horizon=1, days
                 future_prices=future_prices,
                 past_returns=past_returns,
                 future_returns=future_returns,
+                past_weekly_returns=past_weekly_returns,
                 y_dir=y_dir,
                 y_ret=y_ret
             )
@@ -71,60 +76,120 @@ def make_weekly_windows(close_prices: pd.DataFrame, lookback=10, horizon=1, days
 def _build_features(window_prices: pd.DataFrame, days_per_week: int = 5, zscore_cross_section: bool = True):
     """
     window_prices: (L days) x N assets daily closes
-
+    
     Returns:
       features_df(X): N assets x K features
     """
     prices = window_prices.copy()
-    rets = np.log(prices / prices.shift(1)).dropna()
+    # Use fillna(0) cautiously or handle NaNs downstream; 
+    # here we assume window_prices is clean enough or we accept data loss.
+    rets = np.log(prices / prices.shift(1)).fillna(0) 
 
-    # helpers
+    # --- Helpers ---
     def cumret(k_days: int):
-        # log cumulative return over last k days
         return rets.tail(k_days).sum(axis=0)
 
     def vol(k_days: int):
-        return rets.tail(k_days).std(axis=0)
-
-    def meanret(k_days: int):
-        return rets.tail(k_days).mean(axis=0)
-
-    last_ret = rets.tail(1).iloc[0]
-
-    # momentum horizons
+        # Add small epsilon to avoid division by zero
+        return rets.tail(k_days).std(axis=0) + 1e-8 
+    
+    # --- 1. Momentum (Raw) ---
     mom_1w  = cumret(1 * days_per_week)
     mom_4w  = cumret(4 * days_per_week)
-    mom_10w = cumret(10 * days_per_week) if len(rets) >= 10 * days_per_week else cumret(len(rets))
+    mom_12w = cumret(12 * days_per_week) # Changed 10->12 (Quarterly is a common seasonal frequency)
 
-    # risk / stats
+    # --- 2. Volatility (Risk) ---
     vol_1w  = vol(1 * days_per_week)
-    vol_4w  = vol(4 * days_per_week) if len(rets) >= 4 * days_per_week else vol(len(rets))
+    vol_4w  = vol(4 * days_per_week)
+    
+    # --- 3. Risk-Adjusted Momentum (New High-Value Feature) ---
+    # Captures "Smoothness" of the trend. 
+    # High return with low vol = High Signal.
+    sharpe_1w = mom_1w / vol_1w
+    sharpe_4w = mom_4w / vol_4w
 
-    mu_1w   = meanret(1 * days_per_week)
-    mu_4w   = meanret(4 * days_per_week) if len(rets) >= 4 * days_per_week else meanret(len(rets))
-
-    # simple max drawdown over lookback
-    # drawdown from running max in price level
+    # --- 4. Drawdown ---
     running_max = prices.cummax()
-    dd = (prices / running_max - 1.0).min(axis=0)  # most negative drawdown
+    dd = (prices / running_max - 1.0).min(axis=0)
+
+    # --- 5. Volatility Regime (New) ---
+    # Is current vol higher than long-term vol? (Mean Reversion signal)
+    vol_ratio = vol_1w / (vol(12 * days_per_week) + 1e-8)
 
     feats = pd.DataFrame(
         {
-            "last_ret": last_ret,
             "mom_1w": mom_1w,
             "mom_4w": mom_4w,
-            "mom_10w": mom_10w,
+            "mom_12w": mom_12w,
             "vol_1w": vol_1w,
             "vol_4w": vol_4w,
-            "mu_1w": mu_1w,
-            "mu_4w": mu_4w,
+            "sharpe_1w": sharpe_1w, # New
+            "sharpe_4w": sharpe_4w, # New
+            "vol_ratio": vol_ratio, # New
             "max_drawdown": dd,
         }
     )
-
-    # optional: cross-sectional normalization (makes models happier)
+    
+    # --- 6. Cross-Sectional Normalization (Crucial) ---
     if zscore_cross_section:
-        feats = (feats - feats.mean(axis=0)) / (feats.std(axis=0) + 1e-12)
+        # Standardize across ASSETS (axis=0 of the feats DF)
+        # Result: For each feature, mean is 0, std is 1 across all stocks for that day.
+        # This forces the model to learn relative ranking instead of absolute price levels.
+        feats = (feats - feats.mean(axis=0)) / (feats.std(axis=0) + 1e-8)
+        
+    return feats
+
+def _build_features_advanced(window_prices: pd.DataFrame, days_per_week: int = 5, zscore_cross_section: bool = True):
+    prices = window_prices.copy()
+    rets = np.log(prices / prices.shift(1)).fillna(0)
+
+    # --- Helpers ---
+    def cumret(k_days): return rets.tail(k_days).sum(axis=0)
+    def vol(k_days): return rets.tail(k_days).std(axis=0) + 1e-8
+
+    # --- New Helper: RSI ---
+    def calc_rsi(series, window=14):
+        # Vectorized RSI calculation
+        delta = series.diff()
+        gain = (delta.where(delta > 0, 0)).rolling(window=window).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(window=window).mean()
+        rs = gain / (loss + 1e-8)
+        return 100 - (100 / (1 + rs))
+
+    # --- 1. Momentum & Volatility (Existing) ---
+    mom_4w  = cumret(4 * days_per_week)
+    vol_4w  = vol(4 * days_per_week)
+    sharpe_4w = mom_4w / vol_4w
+
+    # --- 2. Mean Reversion (New: RSI) ---
+    # We use the full price history to calculate the latest RSI value
+    # RSI is typically 14 days
+    rsi_val = calc_rsi(prices, window=14).iloc[-1]
+    
+    # Scale RSI to 0-1 range for better MLP convergence (standard is 0-100)
+    rsi_scaled = rsi_val / 100.0 
+
+    # --- 3. Trend Stability (New: Distance to MA) ---
+    # Is the price extended far above its trend?
+    ma_50 = prices.rolling(window=50).mean().iloc[-1]
+    curr_price = prices.iloc[-1]
+    
+    # "Distance": (Price / MA) - 1. 
+    # Positive = Above trend, Negative = Below trend.
+    dist_ma_50 = (curr_price / (ma_50 + 1e-8)) - 1.0
+
+    # --- 4. Assemble ---
+    feats = pd.DataFrame({
+        "mom_4w": mom_4w,
+        "vol_4w": vol_4w,
+        "sharpe_4w": sharpe_4w,
+        "rsi": rsi_scaled,       # <--- New
+        "dist_ma_50": dist_ma_50 # <--- New
+    })
+
+    # --- 5. Cross-Sectional Normalization ---
+    if zscore_cross_section:
+        feats = (feats - feats.mean(axis=0)) / (feats.std(axis=0) + 1e-8)
 
     return feats
 
@@ -150,6 +215,7 @@ def make_feature_windows(close_prices: pd.DataFrame, lookback=10, horizon=1, day
     - future_prices: (horizon*5 days) x N assets
     - past_returns: daily log-returns over past window  (X candidate)
     - future_returns: daily log-returns over future window 
+    - past_weekly_ret: weekly log-returns over past window (X candidate)
     - y_dir : direction labels (assets,)    (y candidate)
     - y_ret : next-week returns (assets,)   (y candidate)
 
@@ -168,6 +234,7 @@ def make_feature_windows(close_prices: pd.DataFrame, lookback=10, horizon=1, day
     for w in price_windows:
         # Build features from past window (you can also use w["past_returns"] if your feature builder prefers)
         X = _build_features(w["past_prices"], days_per_week)
+        # X = _build_features_advanced(w["past_prices"], days_per_week)
 
         # Use labels already computed in make_weekly_windows
         y_dir = w["y_dir"]

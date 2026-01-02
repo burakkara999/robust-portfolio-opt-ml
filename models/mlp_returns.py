@@ -1,10 +1,29 @@
 import numpy as np
 import pandas as pd
+import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras import layers
-
+    
 from dataset_builders import X_from_past_returns
+from dataset_builders import X_from_weekly_return_lags
 
+tf.keras.utils.set_random_seed(42)
+
+def fit_predict_mlp_weekly_lags(train_windows, test_window, n_lags=12, epochs=50, batch_size=256, lr=2e-4):
+
+    X_train, y_train, X_test, assets = X_from_weekly_return_lags(train_windows, test_window, n_lags=n_lags)
+
+    model = keras.Sequential([
+        layers.Input(shape=(X_train.shape[1],)),
+        layers.Dense(64, activation="relu"),
+        layers.Dense(32, activation="relu"),
+        layers.Dense(1),
+    ])
+    model.compile(optimizer=keras.optimizers.Adam(lr), loss="mse")
+    model.fit(X_train, y_train, epochs=epochs, batch_size=batch_size, verbose=0)
+
+    y_pred = model.predict(X_test, verbose=0).reshape(-1)
+    return pd.Series(y_pred, index=assets)
 
 def fit_predict_mlp(
         train_windows, 
@@ -30,7 +49,8 @@ def fit_predict_mlp(
 
     X_train = np.vstack(Xs).astype(np.float32)
     y_train = np.vstack(ys).astype(np.float32).ravel()
-
+    print("XTRAIN")
+    print(X_train.shape)
     # Normalize using train only
     mu = X_train.mean(axis=0)
     sigma = X_train.std(axis=0) + 1e-8

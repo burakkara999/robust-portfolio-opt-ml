@@ -8,7 +8,7 @@ from features import make_feature_windows
 
 
 ## MODEL 1 - MLP
-from models.mlp_returns import fit_predict_mlp
+from models.mlp_returns import fit_predict_mlp, fit_predict_mlp_weekly_lags
 
 ## MODEL 2 - per-asset MLP
 from models.mlp_returns_per_asset import fit_predict_mlp_per_asset
@@ -154,14 +154,16 @@ if __name__ == "__main__":
     # markets_chosen = ["commodities", "bonds"]
     # markets_chosen = ["commodities"]
     markets_chosen = ["dow30"]
-    # out_name = "rolling_mean_dow30"
+    out_name = "rolling_mean_dow30"
     # out_name = "mlp_feat_onehot_dow30"
-    out_name = "mlp_residuals_dow30"
+    # out_name = "mlp_weekly_returns_dow30"
     # out_name = "mlp_per_asset_feat_comm"
-    # model = fit_predict_rolling_mean
+
+    model = fit_predict_rolling_mean
     # model = fit_predict_mlp_Xfeat_with_asset_onehot
-    model = fit_predict_residual_mlp_Xfeat
+    # model = fit_predict_residual_mlp_Xfeat
     # model = fit_predict_mlp
+    # model = fit_predict_mlp_weekly_lags
     # model = fit_predict_mlp_Xfeat
     # model = fit_predict_mlp_per_asset_Xfeat
 
