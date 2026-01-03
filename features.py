@@ -52,10 +52,20 @@ def make_weekly_windows(close_prices: pd.DataFrame, lookback=10, horizon=1, days
         past_weekly_returns = past_returns.groupby(np.arange(len(past_returns)) // days_per_week).sum()
         # past_weekly_ret shape: (lookback, assets)  # each row is one week log-return
 
-        next_week_logret = future_returns.sum(axis=0)  # per asset
+        # next_week_logret = future_returns.sum(axis=0)  # per asset
+        next_week_logret_old = np.log(future_prices.iloc[-1] / future_prices.iloc[0]) #### LOG RETURNS - CORRECTION 1
+        next_week_logret = np.log(future_prices.iloc[-1] / past_prices.iloc[-1]) #### LOG RETURNS - CORRECTION 2
+        
+
         y_dir = (next_week_logret > 0).astype(int)
         y_ret = next_week_logret  # regression target
 
+        if future_prices.index[-1] == pd.Timestamp("2025-04-09") or past_prices.index[-1] == pd.Timestamp("2025-04-09"):
+            print("Hit 09.04.2025")
+        
+        if future_prices.index[-1] == pd.Timestamp("2025-01-08") or past_prices.index[-1] == pd.Timestamp("2025-01-08"):
+            print("Hit 08.01.2025")
+            
         windows.append(
             dict(
                 t0=past_prices.index[-1],
@@ -275,12 +285,13 @@ def make_feature_windows(close_prices: pd.DataFrame, lookback=10, horizon=1, day
 
 
 
-from asset_data_module import read_close_prices_all_merged
 
-tickers, close_df = read_close_prices_all_merged(["dow30"])  ## 980days x N assets
 
-##191 weeks = 980/5 - lookback*5
-rolling_feature_windows = make_feature_windows(close_prices=close_df, lookback=5) ## 191weeks --> X: N assets x 9 features
+# tickers, close_df = read_close_prices_all_merged(["dow30"])  ## 980days x N assets
+
+# ##191 weeks = 980/5 - lookback*5
+# rolling_feature_windows = make_feature_windows(close_prices=close_df, lookback=5) ## 191weeks --> X: N assets x 9 features
+
 
 
 # tickers, close_df = read_close_prices("dow30")
@@ -300,3 +311,25 @@ rolling_feature_windows = make_feature_windows(close_prices=close_df, lookback=5
 # print(y_ret)
 
 # print(windows[19]['future_returns'])
+
+### LAST TEST -------------------------------
+
+from asset_data_module import read_close_prices_all_merged
+
+markets = ['dow30', 'commodities', 'bonds']
+# markets = ['dow30']
+# markets = ['commodities']
+# markets = ['bonds']
+start_date, end_date = "2022-01-01", "2025-11-28"
+# start_date, end_date = "2024-06-01", "2025-11-28"
+
+_, close_df = read_close_prices_all_merged(markets, after_date=start_date)
+close_df = close_df.loc[:end_date]
+
+rolling = make_feature_windows(
+    close_prices=close_df,
+    lookback=60,
+    horizon=1,
+    days_per_week=2
+)
+close_df.shape, len(rolling)

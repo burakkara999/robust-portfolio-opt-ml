@@ -92,6 +92,42 @@ def _align_universe_for_period(
     return assets_today
 
 
+def compute_kappa_empirical(hist_err: pd.DataFrame, Lambda: np.ndarray, alpha: float = 0.95, ridge: float = 1e-8):
+    """
+    hist_err: (M, N) dataframe of past realized error vectors (rows=time, cols=assets) aligned to current assets
+    Lambda:   (N, N) covariance matrix estimated from hist_err
+    alpha:    desired coverage level (0.90, 0.95, 0.99)
+    Returns:  kappa = sqrt(quantile_alpha(q)), where q = e^T Lambda^{-1} e
+    """
+    if hist_err is None or len(hist_err) < 5:
+        return None
+
+    E = hist_err.to_numpy(dtype=float)
+    if not np.isfinite(E).all():
+        return None
+
+    N = Lambda.shape[0]
+    L = Lambda + ridge * np.eye(N)
+
+    try:
+        L_inv = np.linalg.inv(L)
+    except np.linalg.LinAlgError:
+        return None
+
+    # q_i = e_i^T L_inv e_i
+    q = np.einsum("ti,ij,tj->t", E, L_inv, E)
+
+    q = q[np.isfinite(q)]
+    if len(q) == 0:
+        return None
+
+    q_alpha = np.quantile(q, alpha)
+    if not np.isfinite(q_alpha) or q_alpha <= 0:
+        return None
+
+    return float(np.sqrt(q_alpha))
+
+
 def run_backtest_from_tables(
     markets: list[str],
     model_name: str,
@@ -99,12 +135,15 @@ def run_backtest_from_tables(
     train_weeks: int = 52,
     error_weeks: int = 20,
     warmup_periods: int = 20,   # first K backtest periods (in 'year') use non-robust
-    kappa: float = 0.5,
-    delta: float = 0.5,
+    # kappa: float = 0.5,
+    alpha: float = 0.9, ## quantile alpha for kappa selection (from data)
+    # delta: float = 0.5,
+    p: float=0.5,
     eps: float = 1e-8,
     out_dir: str | None = None,
     merged=False
 ):
+    delta = (p/(1-p))**0.5
     markets_str = "-".join(markets)
 
     if merged:
@@ -116,6 +155,7 @@ def run_backtest_from_tables(
         true_path = os.path.join("data/prediction", f"{model_name}_{markets_str}_true_returns.csv")
         err_path = os.path.join("data/prediction", f"{model_name}_{markets_str}_errors.csv")     
 
+    print("TRUE RETURNS from ", true_path)
     if not os.path.exists(exp_path):
         raise FileNotFoundError(exp_path)
     if not os.path.exists(true_path):
@@ -139,7 +179,8 @@ def run_backtest_from_tables(
 
     # Backtest periods are only the requested year (but we can use pre-year rows for history)
     if isinstance(expected_df.index, pd.DatetimeIndex):
-        backtest_idx = expected_df.index[expected_df.index.year == year]
+        # backtest_idx = expected_df.index[expected_df.index.year == year] ## 2025
+        backtest_idx = expected_df.index[expected_df.index.year.isin([year-1, year])] ## 2025 - 2024
     else:
         backtest_idx = expected_df.index
 
@@ -177,6 +218,14 @@ def run_backtest_from_tables(
             continue
 
         Lambda = _safe_cov(hist_err[assets].to_numpy(dtype=float), eps=eps)
+        
+        ## Kappa selection!
+        kappa = 0.0
+        if (j >= warmup_periods) and (Lambda is not None):
+            kappa = compute_kappa_empirical(hist_err[assets], Lambda, alpha=alpha)  # <-- new
+            if kappa is None:
+                kappa = 0.0  # fallback to fixed
+                print("ERROR on KAPPA!")
 
         if (j >= warmup_periods) and (Lambda is not None):
             w_opt, obj = solve_markowitz_robust(
@@ -214,6 +263,8 @@ def run_backtest_from_tables(
             "realized_portfolio_return": realized_port_ret,
             "objective": float(obj),
             "is_robust": int(is_robust),
+            "kappa": float(kappa),
+            "delta": float(delta),
             "n_assets": int(len(assets)),
             "n_invested": n_invested,
             "sum_w": float(np.sum(w_opt)),
@@ -238,11 +289,14 @@ def run_backtest_from_tables(
         if merged:
             out_ports = os.path.join(out_dir, f"{model_name}_permarket_{markets_str}_ports_{year}.csv")
             out_summary = os.path.join(out_dir, f"{model_name}_permarket_{markets_str}_port_summary_{year}.csv")
+            out_summary_e = os.path.join(out_dir, f"{model_name}_permarket_{markets_str}_port_summary_{year}.xlsx")
         else:
             out_ports = os.path.join(out_dir, f"{model_name}_singlecrossmarket_{markets_str}_ports_{year}.csv")
             out_summary = os.path.join(out_dir, f"{model_name}_singlecrossmarket_{markets_str}_port_summary_{year}.csv")
+            out_summary_e = os.path.join(out_dir, f"{model_name}_singlecrossmarket_{markets_str}_port_summary_{year}.xlsx")
         ports_df.to_csv(out_ports, index=False, float_format="%.8f")
         port_summary_df.to_csv(out_summary, index=False, float_format="%.8f")
+        port_summary_df.to_excel(out_summary_e, index=False, float_format="%.8f")
         print("Saved:")
         print(" ", out_ports, ports_df.shape)
         print(" ", out_summary, port_summary_df.shape)
@@ -258,10 +312,12 @@ run_backtest_from_tables(
     model_name='MLP',
     year=2025,
     train_weeks=60,
-    error_weeks=20,
-    warmup_periods=20,
-    kappa=0.5,
-    delta=0.5,
+    error_weeks=100,
+    warmup_periods=100,
+    # kappa=0.5,
+    alpha=0.5,
+    # delta=0.5,
+    p=0.5,
     eps=1e-8,
     out_dir='outputs/backtest',
     merged=False
