@@ -103,12 +103,18 @@ def run_backtest_from_tables(
     delta: float = 0.5,
     eps: float = 1e-8,
     out_dir: str | None = None,
+    merged=False
 ):
     markets_str = "-".join(markets)
 
-    exp_path = os.path.join("data/prediction", f"{model_name}_{markets_str}_expected_returns.csv")
-    true_path = os.path.join("data/prediction", f"{model_name}_{markets_str}_true_returns.csv")
-    err_path = os.path.join("data/prediction", f"{model_name}_{markets_str}_errors.csv")
+    if merged:
+        exp_path = os.path.join("data/prediction", f"{model_name}_{markets_str}_merged_expected_returns.csv")
+        true_path = os.path.join("data/prediction", f"{model_name}_{markets_str}_merged_true_returns.csv")
+        err_path = os.path.join("data/prediction", f"{model_name}_{markets_str}_merged_errors.csv")
+    else:
+        exp_path = os.path.join("data/prediction", f"{model_name}_{markets_str}_expected_returns.csv")
+        true_path = os.path.join("data/prediction", f"{model_name}_{markets_str}_true_returns.csv")
+        err_path = os.path.join("data/prediction", f"{model_name}_{markets_str}_errors.csv")     
 
     if not os.path.exists(exp_path):
         raise FileNotFoundError(exp_path)
@@ -199,6 +205,9 @@ def run_backtest_from_tables(
         expected_port_ret = float(np.dot(w_opt, mu_hat))
         realized_port_ret = float(np.dot(w_opt, r_real))
 
+        min_invest_w = 1e-6  # or 1e-5 to match your zeroing threshold
+        n_invested = int(np.sum(np.abs(w_opt) > min_invest_w))
+
         port_summary_rows.append({
             "period": t,
             "expected_portfolio_return": expected_port_ret,
@@ -206,6 +215,7 @@ def run_backtest_from_tables(
             "objective": float(obj),
             "is_robust": int(is_robust),
             "n_assets": int(len(assets)),
+            "n_invested": n_invested,
             "sum_w": float(np.sum(w_opt)),
         })
 
@@ -225,10 +235,14 @@ def run_backtest_from_tables(
 
     if out_dir is not None:
         os.makedirs(out_dir, exist_ok=True)
-        out_ports = os.path.join(out_dir, f"{model_name}_{markets_str}_ports_{year}.csv")
-        out_summary = os.path.join(out_dir, f"{model_name}_{markets_str}_port_summary_{year}.csv")
-        ports_df.to_csv(out_ports, index=False)
-        port_summary_df.to_csv(out_summary, index=False)
+        if merged:
+            out_ports = os.path.join(out_dir, f"{model_name}_permarket_{markets_str}_ports_{year}.csv")
+            out_summary = os.path.join(out_dir, f"{model_name}_permarket_{markets_str}_port_summary_{year}.csv")
+        else:
+            out_ports = os.path.join(out_dir, f"{model_name}_singlecrossmarket_{markets_str}_ports_{year}.csv")
+            out_summary = os.path.join(out_dir, f"{model_name}_singlecrossmarket_{markets_str}_port_summary_{year}.csv")
+        ports_df.to_csv(out_ports, index=False, float_format="%.8f")
+        port_summary_df.to_csv(out_summary, index=False, float_format="%.8f")
         print("Saved:")
         print(" ", out_ports, ports_df.shape)
         print(" ", out_summary, port_summary_df.shape)
@@ -240,7 +254,7 @@ def run_backtest_from_tables(
 
 run_backtest_from_tables(
     # markets=['dow30'],
-    markets=['commodities'],
+    markets=['dow30', 'commodities', 'bonds'],
     model_name='MLP',
     year=2025,
     train_weeks=60,
@@ -250,5 +264,6 @@ run_backtest_from_tables(
     delta=0.5,
     eps=1e-8,
     out_dir='outputs/backtest',
+    merged=False
 )
 

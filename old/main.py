@@ -1,4 +1,4 @@
-from backtest_runner import run_walk_forward
+from old.backtest_runner import run_walk_forward
 from dataset_builders import X_from_past_returns, y_from_next_week_return
 from models.mlp_returns import fit_predict as mlp_returns_fit_predict
 
