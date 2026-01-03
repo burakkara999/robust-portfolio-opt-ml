@@ -166,7 +166,8 @@ def solve_markowitz_zymler11(assets, window, p=0.1, q=0.1):
     return w_opt, round(m.ObjVal, 4)
 
 
-def solve_markowitz_robust(assets, expected_returns, Sigma, Lambda, kappa, delta):
+
+def solve_markowitz_robust(assets, expected_returns, Sigma, Lambda, kappa, delta, verbose=False):
     """ 
     Parameters:
         -expected returns: array with size=len(assets)
@@ -174,6 +175,7 @@ def solve_markowitz_robust(assets, expected_returns, Sigma, Lambda, kappa, delta
         -Lambda: Covariance of prediction errors (residuals) of returns (NxN)
         -kappa: Penalty parameter for return uncertainty
         -delta: Penalty parameter for risk - sqrt(p/(1-p))
+        -vebose: bool = False
     """
     rhat = np.asarray(expected_returns, dtype=float).reshape(-1)
     Sigma = np.asarray(Sigma, dtype=float)
@@ -185,28 +187,26 @@ def solve_markowitz_robust(assets, expected_returns, Sigma, Lambda, kappa, delta
     assert Lambda.shape == (n, n)
 
     m = gp.Model("robust_markowitz_photo")
+    m.Params.OutputFlag = 0  # keep solver quiet; set to 1 if you want Gurobi logs
 
     # -------------------------
     # Variables
     # -------------------------
-    w = m.addVars(n, lb=0.0, ub=1.0, name="w")  # 0 <= w_i <= 1
-    t_r = m.addVar(lb=0.0, name="t_r")          # >= 0
-    t_s = m.addVar(lb=0.0, name="t_s")          # >= 0  (this is your t_Σ)
+    w = m.addVars(n, lb=0.0, ub=1.0, name="w")
+    t_r = m.addVar(lb=0.0, name="t_r")
+    t_s = m.addVar(lb=0.0, name="t_s")
 
     # -------------------------
     # Constraints
     # -------------------------
-    # sum_i w_i = 1
     m.addConstr(gp.quicksum(w[i] for i in range(n)) == 1.0, name="budget")
 
-    # w^T Lambda w <= t_r^2
     m.addQConstr(
         gp.quicksum(Lambda[i, j] * w[i] * w[j] for i in range(n) for j in range(n))
         <= t_r * t_r,
         name="mean_uncertainty"
     )
 
-    # w^T Sigma w <= t_s^2
     m.addQConstr(
         gp.quicksum(Sigma[i, j] * w[i] * w[j] for i in range(n) for j in range(n))
         <= t_s * t_s,
@@ -214,7 +214,7 @@ def solve_markowitz_robust(assets, expected_returns, Sigma, Lambda, kappa, delta
     )
 
     # -------------------------
-    # Objective: max rhat^T w - kappa t_r - delta t_s
+    # Objective
     # -------------------------
     m.setObjective(
         gp.quicksum(rhat[i] * w[i] for i in range(n)) - kappa * t_r - delta * t_s,
@@ -222,20 +222,54 @@ def solve_markowitz_robust(assets, expected_returns, Sigma, Lambda, kappa, delta
     )
 
     m.optimize()
-
     if m.Status != GRB.OPTIMAL:
         raise RuntimeError(f"Optimization status: {m.Status}")
 
+    # -------------------------
+    # Solution
+    # -------------------------
     w_sol = np.array([w[i].X for i in range(n)], dtype=float)
-    # zero-out tiny weights
     w_sol[np.abs(w_sol) < 1e-5] = 0.0
-
-    # (optional but recommended) renormalize if sum should be 1
     s = w_sol.sum()
     if s > 0:
         w_sol = w_sol / s
-    obj_val = float(m.ObjVal)
-    
+
+    # --- pull optimized t values ---
+    t_r_sol = float(t_r.X)
+    t_s_sol = float(t_s.X)
+
+    # --- compute “actual” quadratic forms too (for sanity) ---
+    q_lambda = float(w_sol @ Lambda @ w_sol)
+    q_sigma  = float(w_sol @ Sigma @ w_sol)
+
+    exp_term = float(rhat @ w_sol)
+    unc_pen  = float(kappa * t_r_sol)
+    risk_pen = float(delta * t_s_sol)
+    obj_val  = float(m.ObjVal)
+
+    details = {
+        "t_r": t_r_sol,
+        "t_s": t_s_sol,
+        "wT_Lambda_w": q_lambda,
+        "wT_Sigma_w": q_sigma,
+        "muT_w": exp_term,
+        "kappa_t_r": unc_pen,
+        "delta_t_s": risk_pen,
+        "objective": obj_val,
+        "n_assets": int(n),
+    }
+
+    if verbose:
+        print("---- Robust Markowitz breakdown ----")
+        print(f"mu^T w            = {exp_term:.8f}")
+        print(f"t_r (sqrt wΛw)    = {t_r_sol:.8f}   (wΛw={q_lambda:.8e})")
+        print(f"t_s (sqrt wΣw)    = {t_s_sol:.8f}   (wΣw={q_sigma:.8e})")
+        print(f"uncert penalty    = kappa*t_r = {unc_pen:.8f}   (kappa={kappa})")
+        print(f"risk penalty      = delta*t_s = {risk_pen:.8f}   (delta={delta})")
+        print(f"objective         = {obj_val:.8f}")
+        print("-----------------------------------")
+
+    # return w_sol, obj_val, details
     return w_sol, obj_val
 
 
