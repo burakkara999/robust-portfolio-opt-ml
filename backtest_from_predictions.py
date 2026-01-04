@@ -30,6 +30,7 @@ Notes:
 import os
 import numpy as np
 import pandas as pd
+import math
 
 from portfolio_models import solve_markowitz_robust
 
@@ -158,8 +159,10 @@ def run_backtest_from_tables(
     out_dir: str | None = None,
     merged=False,
     top_dow30=False, ### choose top 10 dow30 before optimizaiton
+    money=1000,
 ):
-    delta = (p/(1-p))**0.5
+    # delta = (p/(1-p))**0.5
+    delta = math.sqrt(p/(1-p))
     markets_str = "-".join(markets)
 
     if merged:
@@ -249,8 +252,9 @@ def run_backtest_from_tables(
             kappa = compute_kappa_empirical(hist_err[assets], Lambda, alpha=alpha)  # <-- new
             if kappa is None or alpha==0:
                 kappa = 0.0  # fallback to fixed
-                print("ERROR on KAPPA!")
+                print("No Robust!")
 
+        print("PERIOD:", t)
         if (j >= warmup_periods) and (Lambda is not None):
             w_opt, obj = solve_markowitz_robust(
                 assets=list(assets),
@@ -281,6 +285,12 @@ def run_backtest_from_tables(
         min_invest_w = 1e-6  # or 1e-5 to match your zeroing threshold
         n_invested = int(np.sum(np.abs(w_opt) > min_invest_w))
 
+        ## calculate money - m[i] = m[i-1] * exp(y_ret[i])
+        expected_money = float(money)
+        if t.year == year:
+            money *= np.exp(realized_port_ret)
+            expected_money *= np.exp(expected_port_ret)
+
         port_summary_rows.append({
             "period": t,
             "expected_portfolio_return": expected_port_ret,
@@ -292,6 +302,8 @@ def run_backtest_from_tables(
             "n_assets": int(len(assets)),
             "n_invested": n_invested,
             "sum_w": float(np.sum(w_opt)),
+            "money": float(money),
+            "expected_money": float(expected_money)
         })
 
         for i, a in enumerate(assets):
@@ -350,27 +362,80 @@ def run_backtest_from_tables(
 #     top_dow30=True,
 # )
 
-alpha_set = 
-p_set = ()
-w_set = (20,40,60,80)
-top10_set = 
 # ## 2024-25
-run_backtest_from_tables(
-    # markets=['dow30'],
-    markets=['dow30', 'commodities', 'bonds'],
-    model_name='MLP',
-    year=2025,
-    prev_year=True,
-    train_weeks=60,
-    error_weeks=60,
-    warmup_periods=60,
-    # kappa=0.5,
-    alpha=0.5,
-    # delta=0.5,
-    p=0.5,
-    eps=1e-8,
-    out_dir='outputs/backtest',
-    merged=False,
-    top_dow30=True
-)
+# ports_df, port_summary_df = run_backtest_from_tables(
+#     # markets=['dow30'],
+#     markets=['dow30', 'commodities', 'bonds'],
+#     model_name='MLP',
+#     year=2025,
+#     prev_year=True,
+#     train_weeks=60,
+#     error_weeks=60,
+#     warmup_periods=60,
+#     # kappa=0.5,
+#     alpha=0.5,
+#     # delta=0.5,
+#     p=0.5,
+#     eps=1e-8,
+#     out_dir='outputs/backtest',
+#     merged=False,
+#     top_dow30=True
+# )
+
+# print(port_summary_df['money'])
+# print(port_summary_df['money'].iloc[-1])
+
+
+# GRID Search
+alpha_set = (0.0, 0.25, 0.5, 0.9)
+p_set     = (0.25, 0.5, 0.8)
+w_set     = (20, 40, 60, 80)
+top10_set = (False, True)
+
+results = []
+
+for a in alpha_set:
+    for p in p_set:
+        # choose w grid per alpha (your rule)
+        w_set_local = (20,) if a == 0.0 else w_set
+
+        for w in w_set_local:
+            for top10 in top10_set:
+
+                ports_df, port_summary_df = run_backtest_from_tables(
+                    markets=['dow30', 'commodities', 'bonds'],
+                    model_name='MLP',
+                    year=2025,
+                    prev_year=True,
+                    train_weeks=60,
+                    error_weeks=w,
+                    warmup_periods=w,
+                    alpha=a, 
+                    p=p,   
+                    eps=1e-8,
+                    out_dir='outputs/backtest',
+                    merged=False,
+                    top_dow30=top10 
+                )
+
+                last_money = float(port_summary_df["money"].iloc[-1])
+                expected_last_money = float(port_summary_df["expected_money"].iloc[-1])
+
+                results.append({
+                    "alpha": a,
+                    "p": p,
+                    "w": w,
+                    "top10": top10,
+                    "last_money": last_money,
+                    "expected_last_money": expected_last_money
+                })
+
+grid_df = pd.DataFrame(results).sort_values("last_money", ascending=False)
+
+# save if you want
+grid_df.to_excel("outputs/backtest/grid_results.xlsx", index=False)
+
+print(grid_df.head(10))
+
+
 
