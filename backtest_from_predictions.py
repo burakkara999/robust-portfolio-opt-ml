@@ -128,20 +128,36 @@ def compute_kappa_empirical(hist_err: pd.DataFrame, Lambda: np.ndarray, alpha: f
     return float(np.sqrt(q_alpha))
 
 
+def keep_topk_from_market_plus_others(hist_true: pd.DataFrame, assets: pd.Index, market: str, k: int = 10) -> pd.Index:
+    tag = f"{market}:"
+    mkt_assets = [a for a in assets if str(a).startswith(tag)]
+    other_assets = [a for a in assets if not str(a).startswith(tag)]
+
+    if len(mkt_assets) == 0:
+        return assets  # no filtering possible / needed
+
+    means = hist_true[mkt_assets].mean(axis=0).sort_values(ascending=False)
+    keep_mkt = list(means.index[: min(k, len(means))])
+    print("check")
+    return pd.Index(other_assets + keep_mkt).astype(str).sort_values()
+
+
 def run_backtest_from_tables(
     markets: list[str],
     model_name: str,
     year: int = 2025,
+    prev_year=False,
     train_weeks: int = 52,
     error_weeks: int = 20,
     warmup_periods: int = 20,   # first K backtest periods (in 'year') use non-robust
     # kappa: float = 0.5,
-    alpha: float = 0.9, ## quantile alpha for kappa selection (from data)
+    alpha: float = 0.9, ## quantile alpha for kappa selection (from data) - a=0 means no robust!
     # delta: float = 0.5,
     p: float=0.5,
     eps: float = 1e-8,
     out_dir: str | None = None,
-    merged=False
+    merged=False,
+    top_dow30=False, ### choose top 10 dow30 before optimizaiton
 ):
     delta = (p/(1-p))**0.5
     markets_str = "-".join(markets)
@@ -179,8 +195,11 @@ def run_backtest_from_tables(
 
     # Backtest periods are only the requested year (but we can use pre-year rows for history)
     if isinstance(expected_df.index, pd.DatetimeIndex):
-        # backtest_idx = expected_df.index[expected_df.index.year == year] ## 2025
-        backtest_idx = expected_df.index[expected_df.index.year.isin([year-1, year])] ## 2025 - 2024
+        if prev_year:
+            backtest_idx = expected_df.index[expected_df.index.year.isin([year-1, year])] ## 2025 - 2024
+        else:
+            backtest_idx = expected_df.index[expected_df.index.year == year] ## 2025
+        
     else:
         backtest_idx = expected_df.index
 
@@ -210,6 +229,11 @@ def run_backtest_from_tables(
         if assets is None:
             continue
 
+        if top_dow30:
+            assets = keep_topk_from_market_plus_others(hist_true, assets, market="dow30", k=10)
+            if len(assets) < 2:
+                continue
+        
         mu_hat = exp_row.loc[assets].to_numpy(dtype=float)
         r_real = true_row.loc[assets].to_numpy(dtype=float)
 
@@ -223,7 +247,7 @@ def run_backtest_from_tables(
         kappa = 0.0
         if (j >= warmup_periods) and (Lambda is not None):
             kappa = compute_kappa_empirical(hist_err[assets], Lambda, alpha=alpha)  # <-- new
-            if kappa is None:
+            if kappa is None or alpha==0:
                 kappa = 0.0  # fallback to fixed
                 print("ERROR on KAPPA!")
 
@@ -290,10 +314,14 @@ def run_backtest_from_tables(
             out_ports = os.path.join(out_dir, f"{model_name}_permarket_{markets_str}_ports_{year}.csv")
             out_summary = os.path.join(out_dir, f"{model_name}_permarket_{markets_str}_port_summary_{year}.csv")
             out_summary_e = os.path.join(out_dir, f"{model_name}_permarket_{markets_str}_port_summary_{year}.xlsx")
+            
         else:
-            out_ports = os.path.join(out_dir, f"{model_name}_singlecrossmarket_{markets_str}_ports_{year}.csv")
-            out_summary = os.path.join(out_dir, f"{model_name}_singlecrossmarket_{markets_str}_port_summary_{year}.csv")
-            out_summary_e = os.path.join(out_dir, f"{model_name}_singlecrossmarket_{markets_str}_port_summary_{year}.xlsx")
+            out_ports = os.path.join(out_dir, f"a{alpha}_p{p}_w{warmup_periods}_n{len(assets)}_{model_name}_singlecrossmarket_details_{year}.csv")
+            out_summary = os.path.join(out_dir, f"a{alpha}_p{p}_w{warmup_periods}_n{len(assets)}_{model_name}_singlecrossmarket_summary_{year}.csv")
+            out_summary_e = os.path.join(out_dir, f"a{alpha}_p{p}_w{warmup_periods}_n{len(assets)}_{model_name}_singlecrossmarket_summary_{year}.xlsx")
+            # out_ports = os.path.join(out_dir, f"{model_name}_singlecrossmarket_{markets_str}_ports_{year}.csv")
+            # out_summary = os.path.join(out_dir, f"{model_name}_singlecrossmarket_{markets_str}_port_summary_{year}.csv")
+            # out_summary_e = os.path.join(out_dir, f"{model_name}_singlecrossmarket_{markets_str}_port_summary_{year}.xlsx")
         ports_df.to_csv(out_ports, index=False, float_format="%.8f")
         port_summary_df.to_csv(out_summary, index=False, float_format="%.8f")
         port_summary_df.to_excel(out_summary_e, index=False, float_format="%.8f")
@@ -303,23 +331,46 @@ def run_backtest_from_tables(
 
     return ports_df, port_summary_df
 
+## 2025
+# run_backtest_from_tables(
+#     # markets=['dow30'],
+#     markets=['dow30', 'commodities', 'bonds'],
+#     model_name='MLP',
+#     year=2025,
+#     train_weeks=60,
+#     error_weeks=60,
+#     warmup_periods=60,
+#     # kappa=0.5,
+#     alpha=0.5,
+#     # delta=0.5,
+#     p=0.5,
+#     eps=1e-8,
+#     out_dir='outputs/backtest',
+#     merged=False,
+#     top_dow30=True,
+# )
 
-
-
+alpha_set = 
+p_set = ()
+w_set = (20,40,60,80)
+top10_set = 
+# ## 2024-25
 run_backtest_from_tables(
     # markets=['dow30'],
     markets=['dow30', 'commodities', 'bonds'],
     model_name='MLP',
     year=2025,
+    prev_year=True,
     train_weeks=60,
-    error_weeks=100,
-    warmup_periods=100,
+    error_weeks=60,
+    warmup_periods=60,
     # kappa=0.5,
     alpha=0.5,
     # delta=0.5,
     p=0.5,
     eps=1e-8,
     out_dir='outputs/backtest',
-    merged=False
+    merged=False,
+    top_dow30=True
 )
 
