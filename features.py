@@ -63,12 +63,10 @@ def make_weekly_windows(close_prices: pd.DataFrame, lookback=10, horizon=1, days
         if future_prices.index[-1] == pd.Timestamp("2025-04-09") or past_prices.index[-1] == pd.Timestamp("2025-04-09"):
             print("Hit 09.04.2025")
         
-        if future_prices.index[-1] == pd.Timestamp("2025-01-08") or past_prices.index[-1] == pd.Timestamp("2025-01-08"):
-            print("Hit 08.01.2025")
-            
+        
         windows.append(
             dict(
-                t0=past_prices.index[-1],
+                t0=future_prices.index[-1],
                 t1=future_prices.index[-1],
                 past_prices=past_prices,
                 future_prices=future_prices,
@@ -79,6 +77,9 @@ def make_weekly_windows(close_prices: pd.DataFrame, lookback=10, horizon=1, days
                 y_ret=y_ret
             )
         )
+
+        if future_prices.index[-1] == pd.Timestamp("2024-01-02") or past_prices.index[-1] == pd.Timestamp("2024-01-02"):
+            print("Hit 02.01.2024")
 
     return windows
 
@@ -314,22 +315,22 @@ def make_feature_windows(close_prices: pd.DataFrame, lookback=10, horizon=1, day
 
 ### LAST TEST -------------------------------
 
-from asset_data_module import read_close_prices_all_merged
+# from asset_data_module import read_close_prices_all_merged
 
-markets = ['dow30', 'commodities', 'bonds']
-# markets = ['dow30']
-# markets = ['commodities']
+# # markets = ['dow30', 'commodities', 'bonds']
+# # markets = ['dow30']
+# # markets = ['commodities']
 # markets = ['bonds']
-start_date, end_date = "2022-01-01", "2025-11-28"
-# start_date, end_date = "2024-06-01", "2025-11-28"
+# start_date, end_date = "2022-01-01", "2025-11-28"
+# # start_date, end_date = "2024-06-01", "2025-11-28"
 
-_, close_df = read_close_prices_all_merged(markets, after_date=start_date)
-close_df = close_df.loc[:end_date]
+# _, close_df = read_close_prices_all_merged(markets, after_date=start_date)
+# close_df = close_df.loc[:end_date]
 
-rolling = make_feature_windows(
-    close_prices=close_df,
-    lookback=60,
-    horizon=1,
-    days_per_week=2
-)
-close_df.shape, len(rolling)
+# rolling = make_feature_windows(
+#     close_prices=close_df,
+#     lookback=60,
+#     horizon=1,
+#     days_per_week=2
+# )
+# close_df.shape, len(rolling)

@@ -1,4 +1,5 @@
 import pandas as pd
+import numpy as np
 import yfinance as yf
 from pathlib import Path
 
@@ -62,6 +63,18 @@ def _extract_close(prices_raw, tickers):
     return close
 
 
+def save_log_returns(prices_df, out_path, lag=1):
+
+    log_returns = np.log(prices_df / prices_df.shift(lag))
+
+    # keep only every lag-th row 
+    log_returns = log_returns.iloc[::lag]
+
+    log_returns = log_returns.dropna(how="all")
+    log_returns.to_csv(out_path)
+    return out_path
+
+
 # ----------------------------
 # Downloaders
 # ----------------------------
@@ -90,6 +103,7 @@ def download_close_prices_all(
         auto_adjust=True,
         group_by="column",
         threads=False,
+        timeout=300,
     )
 
     close = _extract_close(prices_raw, tickers)
@@ -134,6 +148,7 @@ def download_close_prices_batched(
             auto_adjust=True,
             group_by="column",
             threads=False,
+            timeout=120,
         )
 
         close = _extract_close(prices_raw, t_set)
@@ -324,15 +339,15 @@ def read_close_prices_all_merged(
 # ----------------------------
 if __name__ == "__main__":
     # 1) Download everything found in data/tickers/
-    # results = download_all_datasets(mode="auto", batch_size=100)
+    # results = download_all_datasets(mode="auto", batch_size=100, end_date="2026-01-01")
     # print(results)
 
-    # 2) Read single dataset
-    # tickers, prices = read_close_prices("bist100", after_date="2023-04-01")
+    # # 2) Read single dataset
+    # tickers, prices = read_close_prices("bist100", after_date="2023-06-01")
     # print(len(tickers), prices.shape)
 
-    # 3) Read + merge all datasets
-    # all_tickers, merged_prices = read_close_prices_all_merged(after_date="2023-04-01", how="inner")
+    # # 3) Read + merge all datasets
+    # all_tickers, merged_prices = read_close_prices_all_merged(after_date="2023-06-01", how="inner")
     # print(merged_prices.shape)
     pass
 

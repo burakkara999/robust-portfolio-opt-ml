@@ -385,12 +385,19 @@ def run_backtest_from_tables(
 # print(port_summary_df['money'])
 # print(port_summary_df['money'].iloc[-1])
 
+### PARAMETERS
+markets_selection = ['dow30', 'commodities', 'bonds']
+# output_directory = "outputs/backtest_MLP"
+output_directory = "outputs/backtest_SM60"
+# pred_model_used = "MLP"
+pred_model_used = "SM60"
 
 # GRID Search
 alpha_set = (0.0, 0.25, 0.5, 0.9)
 p_set     = (0.25, 0.5, 0.8)
 w_set     = (20, 40, 60, 80)
-top10_set = (False, True)
+# top10_set = (False, True)
+top10_set = (False,)
 
 results = []
 
@@ -403,8 +410,8 @@ for a in alpha_set:
             for top10 in top10_set:
 
                 ports_df, port_summary_df = run_backtest_from_tables(
-                    markets=['dow30', 'commodities', 'bonds'],
-                    model_name='MLP',
+                    markets=markets_selection,
+                    model_name=pred_model_used,
                     year=2025,
                     prev_year=True,
                     train_weeks=60,
@@ -413,7 +420,7 @@ for a in alpha_set:
                     alpha=a, 
                     p=p,   
                     eps=1e-8,
-                    out_dir='outputs/backtest',
+                    out_dir=output_directory,
                     merged=False,
                     top_dow30=top10 
                 )
@@ -433,7 +440,7 @@ for a in alpha_set:
 grid_df = pd.DataFrame(results).sort_values("last_money", ascending=False)
 
 # save if you want
-grid_df.to_excel("outputs/backtest/grid_results.xlsx", index=False)
+grid_df.to_excel(f"{output_directory}/grid_results.xlsx", index=False)
 
 print(grid_df.head(10))
 
