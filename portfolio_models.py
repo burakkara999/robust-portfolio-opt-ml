@@ -6,7 +6,7 @@ import gurobipy as gp
 from gurobipy import GRB, quicksum
 
 from asset_data_module import read_close_prices, read_close_prices_all_merged
-from features import make_weekly_windows
+# from features import make_weekly_windows
 
 
 def solve_markowitz_zymler7(assets, window, p=0.1):
